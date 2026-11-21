@@ -4505,7 +4505,11 @@
     lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
     setStatus(t) { this.status = t; renderAccount(); },
     errText(e) {
-      const m = (e && (e.message || e.error_description || String(e))) || '';
+      let m = '';
+      if (e && typeof e === 'object') {
+        m = [e.message, e.error_description, e.code && ('code:' + e.code), e.status && ('status:' + e.status), e.details, e.hint].filter(Boolean).join(' / ');
+        if (!m) { try { m = JSON.stringify(e); } catch (x) { m = String(e); } }
+      } else m = String(e || '');
       if (/Invalid login/i.test(m)) return 'メールアドレスかパスワードが違うよ';
       if (/already registered|already been registered/i.test(m)) return 'このメールアドレスはもう登録されているよ。ログインしてみてね';
       if (/at least/i.test(m)) return 'パスワードは8文字以上にしてね';
