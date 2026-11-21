@@ -1919,6 +1919,14 @@
   </div>
 </div>
 
+<section class="notif" id="imgMig">
+  <div class="notif-top">
+    <button class="notif-close" data-back aria-label="戻る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="notif-title" style="flex:1">画像をサーバーに移す</div>
+  </div>
+  <div style="flex:1;overflow-y:auto"><div class="dd-wrap" id="migBody"></div></div>
+</section>
+
 <section class="notif" id="updDetail">
   <div class="notif-top">
     <button class="notif-close" data-back aria-label="戻る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
@@ -2997,7 +3005,10 @@
     });
     return out;
   }
-  const loadImg = (src) => new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+  const loadImg = async (src) => {
+    const u = await Img.url(src);
+    return new Promise((res) => { const im = new Image(); if (u && u.indexOf('data:') !== 0) im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => res(null); im.src = u; });
+  };
 
   async function buildExportCanvas(it, c) {
     const W = 1080, P = 72, CW = W - P * 2, MAXH = 15000;
@@ -3501,23 +3512,9 @@
 
   /* ---------- 詳細画面のボタン ---------- */
   function resizeImage(file, done) {
-    readImage(file, (url) => {
-      if (file.type === 'image/gif') { done(url); return; }
-      const img = new Image();
-      img.onload = () => {
-        const k = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
-        const cv = document.createElement('canvas');
-        cv.width = Math.round(img.naturalWidth * k);
-        cv.height = Math.round(img.naturalHeight * k);
-        const cx = cv.getContext('2d');
-        cx.fillStyle = '#ffffff';
-        cx.fillRect(0, 0, cv.width, cv.height);
-        cx.drawImage(img, 0, 0, cv.width, cv.height);
-        done(cv.toDataURL('image/jpeg', 0.82));
-      };
-      img.onerror = () => alert('画像を読み込めなかったよ');
-      img.src = url;
-    });
+    if (!file) return;
+    toast('画像を保存しているよ…');
+    Img.fromFile(file).then(done).catch((e) => alert(Img.msg(e)));
   }
 
   function toggleFav(it) {
@@ -4118,18 +4115,18 @@
     cv.width = c.opt.outW;
     cv.height = Math.round(c.opt.outW / c.opt.ratio);
     cv.getContext('2d').drawImage(cropImg, c.fx / c.k, c.fy / c.k, c.fw / c.k, c.fw / c.opt.ratio / c.k, 0, 0, cv.width, cv.height);
-    const url = cv.toDataURL('image/jpeg', 0.9);
     cropper.classList.remove('open');
     crop = null;
-    c.done(url);
+    toast('画像を保存しているよ…');
+    Img.fromCanvas(cv).then(c.done).catch((e) => alert(Img.msg(e)));
   });
 
   function pickImage(file, opt, done) {
-    readImage(file, (url) => {
-      // GIFは範囲指定すると止まってしまうので、そのまま使う
-      if (file.type === 'image/gif') { done(url); toast('GIFは動いたまま使うよ（範囲は自動で中央になるよ）'); return; }
-      startCrop(url, opt, done);
-    });
+    if (!file) return;
+    try { Img.check(file); } catch (e) { alert(Img.msg(e)); return; }
+    // GIFは範囲指定すると止まってしまうので、そのまま保存する
+    if (file.type === 'image/gif') { toast('GIFは動いたまま保存するよ（範囲は決められないよ）'); Img.fromFile(file).then(done).catch((e) => alert(Img.msg(e))); return; }
+    readImage(file, (url) => startCrop(url, opt, done));
   }
 
   $('bannerInput').addEventListener('change', (e) => {
@@ -4155,6 +4152,8 @@
       if (acc.dataset.acc === 'uid' || acc.dataset.acc === 'prof') openProfileEdit();
       else if (acc.dataset.acc === 'sync') { if (window.mossSyncNow) window.mossSyncNow(); }
       else if (acc.dataset.acc === 'pull') { if (window.mossPull) window.mossPull(); }
+      else if (acc.dataset.acc === 'imgmig') { window.mossOpenMig(); }
+      else if (acc.dataset.acc === 'imgusage') { /* 表示のみ */ }
       else if (acc.dataset.acc === 'mail') toast('メールアドレスの変更は、このあと作るよ');
       else toast('パスワードの変更は、このあと作るよ');
     }
@@ -4164,8 +4163,8 @@
     const row = (k, label, val) => '<div class="srow" data-acc="' + k + '"><span>' + label + '</span><span class="val">' + esc(val) + '</span><span class="arrow">›</span></div>';
     const C = window.mossCloudInfo ? window.mossCloudInfo() : { mail: '', status: '' };
     $('accList').innerHTML = row('uid', 'ユーザーID', '@' + prof.uid) + row('mail', 'メールアドレス', C.mail || 'ログインしていないよ') + row('pass', 'パスワード', C.mail ? '変更（準備中）' : '') + row('prof', 'プロフィール管理', '') +
-      (C.mail ? row('sync', '保存の状態（タップで今すぐ保存）', C.status) + row('pull', 'サーバーの最新を読み込む', '') : '') +
-      '<div class="nnote">データはあなたのアカウントに保存されるよ。画像は今はデータの中に入れて保存していて、あとで専用の保存場所に移す予定だよ。編集履歴はまだこのブラウザだけに保存されるよ。</div>';
+      (C.mail ? row('sync', '保存の状態（タップで今すぐ保存）', C.status) + row('pull', 'サーバーの最新を読み込む', '') + row('imgusage', '画像の使用量', Img.usageText()) + (Mig.scan().urls.size ? row('imgmig', '画像をサーバーに移す', Mig.scan().urls.size + '枚') : '') : '') +
+      '<div class="nnote">データはあなたのアカウントに保存されるよ。画像は専用の保存場所に置いて、資料には場所だけを保存するよ。</div>';
   }
 
   /* ==================== 募集 ====================
@@ -4558,7 +4557,7 @@
      ブラウザ内の保存(localStorage)は、そのまま「手元のコピー」として残る。 */
   const SB_URL = 'https://frwxpnieoqvarjudxzru.supabase.co';
   const SB_KEY = 'sb_publishable_ByafmZMPSOpOlgDW_4rpqg_1dfhKfFe';
-  const LS_WIPE = ['mossUpdDone', 'mossKnown', 'mossDocsV1', 'mossTpl', 'mossNotifSet', 'mossNotifs', 'mossProf', 'mossOwner', 'mossDirty'];
+  const LS_WIPE = ['mossHistSent', 'mossUpdDone', 'mossKnown', 'mossDocsV1', 'mossTpl', 'mossNotifSet', 'mossNotifs', 'mossProf', 'mossOwner', 'mossDirty'];
 
   const Cloud = {
     sb: null, session: null, status: '未保存', busy: false, again: false, timer: null, known: {}, mode: 'login',
@@ -4629,6 +4628,7 @@
       if (owner === uid) {   // 前回もこのアカウントだった：手元のコピーをそのまま使う
         this.hideGate();
         renderAccount();
+        Img.refreshUsage();
         const hadKnown = this.loadKnown();
         if (this.lsGet('mossDirty') === '1') this.pushSoon(300);
         else {
@@ -4776,6 +4776,7 @@
           custom: prof.custom, pub: prof.pub, avatar: prof.avatar, banner: prof.banner, updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
         if (pr.error) throw pr.error;
+        await this.pushHistory(uid);
         if (!this.again) { try { localStorage.removeItem('mossDirty'); } catch (e) {} this.setStatus('保存済み（' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '）'); }
         this.busy = false;
         if (this.again) this.pushSoon(300);
@@ -4789,16 +4790,42 @@
       }
     },
 
+    /* 編集履歴を、サーバーへ送る（画像は参照だけ。data:URLの画像が入っている履歴は、画像の移行が終わるまで送らない） */
+    async pushHistory(uid) {
+      let sent = {}; try { sent = JSON.parse(this.lsGet('mossHistSent') || '{}') || {}; } catch (e) {}
+      const ids = new Set(allDocs().map((x) => x.id));
+      for (const k of Object.keys(docs.history)) {
+        const id = Number(k); if (!ids.has(id)) continue;
+        const arr = docs.history[k] || [], done = new Set(sent[k] || []);
+        const rows = arr.filter((h) => !done.has(h.at) && JSON.stringify(h.snap).indexOf('data:image') < 0)
+          .map((h) => ({ owner: uid, doc_id: id, at_ms: h.at, reason: h.reason || '', snap: h.snap }));
+        for (let i = 0; i < rows.length; i += 10) {
+          const part = rows.slice(i, i + 10);
+          const r = await this.sb.from('doc_history').upsert(part, { onConflict: 'owner,doc_id,at_ms', ignoreDuplicates: true });
+          if (r.error) throw r.error;
+          sent[k] = (sent[k] || []).concat(part.map((x) => x.at_ms));
+        }
+        if (rows.length && arr.length) {   // 手元で古くなって消えた履歴は、サーバーからも消す
+          const min = Math.min.apply(null, arr.map((h) => h.at));
+          const dl = await this.sb.from('doc_history').delete().eq('owner', uid).eq('doc_id', id).lt('at_ms', min);
+          if (dl.error) throw dl.error;
+          sent[k] = (sent[k] || []).filter((x) => x >= min);
+        }
+      }
+      this.lsSet('mossHistSent', JSON.stringify(sent));
+    },
+
     /* ---------- サーバーから読み込み ---------- */
     async pull(boot) {
       const uid = this.session.user.id;
-      const [d, p, s, pr] = await Promise.all([
-        this.sb.from('docs').select('*').order('updated_ms', { ascending: false }),
+      const [d, p, s, pr, hs] = await Promise.all([
+        this.sb.from('docs').select('owner,id,type,title,tags,cover,folders,collections,fav,related,data,is_public,created_ms,updated_ms,deleted_ms').order('updated_ms', { ascending: false }),
         this.sb.from('doc_private').select('doc_id,memo'),
         this.sb.from('user_settings').select('*').maybeSingle(),
-        this.sb.from('profiles').select('*').maybeSingle()
+        this.sb.from('profiles').select('*').maybeSingle(),
+        this.sb.from('doc_history').select('doc_id,at_ms,reason,snap').order('at_ms', { ascending: true })
       ]);
-      [d, p, s, pr].forEach((r) => { if (r.error) throw r.error; });
+      [d, p, s, pr, hs].forEach((r) => { if (r.error) throw r.error; });
       const memo = {}; (p.data || []).forEach((m) => { memo[m.doc_id] = m.memo; });
       const items = [], trash = [];
       (d.data || []).forEach((r) => {
@@ -4812,11 +4839,14 @@
         if (r.deleted_ms) trash.push({ item: it, deletedAt: Number(r.deleted_ms) }); else items.push(it);
       });
       const st = s.data || {};
-      const keepHist = {};   // 編集履歴はまだサーバーに無いので、このブラウザのものを残す
-      if (!boot) Object.keys(docs.history).forEach((k) => { if (items.concat(trash.map((t) => t.item)).some((x) => String(x.id) === k)) keepHist[k] = docs.history[k]; });
+      const hist = {}, sentNow = {};   // 履歴：サーバーのものに、まだ送っていない手元の分を足す
+      (hs.data || []).forEach((r) => { const k = String(r.doc_id); (hist[k] = hist[k] || []).push({ at: Number(r.at_ms), reason: r.reason || '', snap: r.snap }); (sentNow[k] = sentNow[k] || []).push(Number(r.at_ms)); });
+      if (!boot) Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => { if (!(sentNow[k] || []).includes(h.at)) (hist[k] = hist[k] || []).push(h); }));
+      Object.keys(hist).forEach((k) => hist[k].sort((a, b) => a.at - b.at));
+      this.lsSet('mossHistSent', JSON.stringify(sentNow));
       const maxId = items.concat(trash.map((t) => t.item)).reduce((m, x) => Math.max(m, x.id), 0);
       this.lsSet('mossDocsV1', JSON.stringify({
-        items: items, trash: trash, history: keepHist, nextId: maxId + 1,
+        items: items, trash: trash, history: hist, nextId: maxId + 1,
         folders: st.folders || ['未整理'], collections: st.collections || []
       }));
       if (st.templates) this.lsSet('mossTpl', JSON.stringify(st.templates));
@@ -4848,6 +4878,320 @@
     }
   };
 
+  /* ==================== 画像（Supabase Storage） ====================
+     画像は Storage（非公開）に置いて、資料には「参照（mossimg:ユーザーID/SHA-256.拡張子）」だけを入れる。
+     旧形式（data:URL）もそのまま表示できる。ログインしていないときは、これまでどおり data:URL で動く。 */
+  const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+  const IMG_REF = /mossimg:[0-9a-f-]{36}\/[0-9a-f]{64}\.(?:jpg|png|webp|gif)/g;
+  const mb = (n) => (n / 1048576).toFixed(n >= 10485760 ? 0 : 1);
+
+  const Img = {
+    maxFile: 10485760, edge: 1600, wideEdge: 1200, quality: 0.88,
+    usage: null, warned: false, urls: {}, inflight: {},
+    ready() { return !!(Cloud.session && Cloud.sb); },
+    isRef(v) { return typeof v === 'string' && v.indexOf('mossimg:') === 0; },
+    fail(msg) { const e = new Error(msg); e.userMsg = msg; return e; },
+    msg(e) { return (e && e.userMsg) || ('画像を保存できなかったよ（' + ((e && e.message) || e) + '）'); },
+    reasonText(j) {
+      const c = j.code;
+      if (c === 'user_quota') return 'あなたの画像の保存容量がいっぱいだよ（上限 ' + mb(j.limit || 0) + 'MB）。使っていない画像を外してから、もう一度試してね。いまある資料の閲覧と編集はできるよ。';
+      if (c === 'global_quota') return 'いま、サービス全体の画像の保存場所が上限に達していて、新しい画像を追加できないよ。資料の閲覧と編集はできるよ。しばらくしてから、もう一度試してね。';
+      if (c === 'too_big') return '画像は1枚' + mb(j.limit || this.maxFile) + 'MBまでだよ';
+      if (c === 'mime') return '使える画像は JPEG・PNG・WebP・GIF だよ';
+      if (c === 'auth') return 'ログインし直してから、もう一度試してね';
+      return '画像を保存できなかったよ（' + c + '）';
+    },
+    check(file) {
+      if (!file) throw this.fail('画像が選ばれていないよ');
+      if (!IMG_EXT[file.type]) throw this.fail('使える画像は JPEG・PNG・WebP・GIF だよ');
+      if (file.size > this.maxFile) throw this.fail('画像は1枚' + mb(this.maxFile) + 'MBまでだよ（この画像は ' + (file.size / 1048576).toFixed(1) + 'MB）');
+    },
+    async sha256(blob) {
+      if (!(window.crypto && crypto.subtle)) throw this.fail('この環境では画像を確認できないよ（https のページで開いてね）');
+      const buf = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    },
+    toDataURL(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); }); },
+    load(file) {
+      return new Promise((res, rej) => {
+        const u = URL.createObjectURL(file), im = new Image();
+        im.onload = () => { URL.revokeObjectURL(u); res(im); };
+        im.onerror = () => { URL.revokeObjectURL(u); rej(this.fail('画像を読み込めなかったよ')); };
+        im.src = u;
+      });
+    },
+    hasAlpha(cv) {
+      try { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let i = 3; i < d.length; i += 16) if (d[i] < 250) return true; } catch (e) {}
+      return false;
+    },
+    canvasBlob(cv, alpha) {
+      let out = cv;
+      if (!alpha) {   // 透過がないときは JPEG（背景は白）
+        out = document.createElement('canvas'); out.width = cv.width; out.height = cv.height;
+        const x = out.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, out.width, out.height); x.drawImage(cv, 0, 0);
+      }
+      return new Promise((res, rej) => out.toBlob((b) => (b ? res(b) : rej(this.fail('画像を変換できなかったよ'))), alpha ? 'image/png' : 'image/jpeg', this.quality));
+    },
+    /* ファイル → 縮小（GIFは無加工）→ 保存 → 参照（ログインしていなければ data:URL） */
+    async fromFile(file, opt) {
+      opt = opt || {};
+      this.check(file);
+      let blob = file, mime = file.type;
+      if (file.type !== 'image/gif') {
+        const im = await this.load(file);
+        const w = im.naturalWidth, h = im.naturalHeight;
+        let k = Math.min(1, (opt.edge || this.edge) / Math.max(w, h));
+        if (Math.max(w, h) / Math.min(w, h) > 2.2) k = Math.min(1, this.wideEdge / Math.min(w, h));   // 縦長・横長の画像は、細い辺を基準にする
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+        const alpha = file.type !== 'image/jpeg' && this.hasAlpha(cv);   // PNG/WebPの透過は残す
+        blob = await this.canvasBlob(cv, alpha); mime = blob.type;
+      }
+      return this.store(blob, mime);
+    },
+    async fromCanvas(cv) { const blob = await this.canvasBlob(cv, this.hasAlpha(cv)); return this.store(blob, blob.type); },
+    async store(blob, mime) {
+      if (!this.ready()) return this.toDataURL(blob);
+      const ref = await this.upload(blob, mime, false);
+      this.refreshUsage();
+      return ref;
+    },
+    upload(blob, mime, verify) {
+      return this.sha256(blob).then((sha) => {
+        const ext = IMG_EXT[mime];
+        if (!ext) throw this.fail('使える画像は JPEG・PNG・WebP・GIF だよ');
+        const path = Cloud.session.user.id + '/' + sha + '.' + ext, key = path + (verify ? '#v' : '');
+        if (this.inflight[key]) return this.inflight[key];
+        const p = this._upload(blob, mime, path, sha, verify).finally(() => { delete this.inflight[key]; });
+        this.inflight[key] = p;
+        return p;
+      });
+    },
+    async _upload(blob, mime, path, sha, verify) {
+      const sb = Cloud.sb;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const r = await sb.rpc('reserve_image', { p_path: path, p_bytes: blob.size, p_mime: mime });
+        if (r.error) throw this.fail('サーバーにつながらなかったよ。あとでもう一度試してね');
+        const j = r.data || {};
+        if (!j.ok) throw this.fail(this.reasonText(j));
+        if (j.code !== 'exists') {
+          const up = await sb.storage.from('images').upload(path, blob, { contentType: mime, upsert: false, cacheControl: '31536000' });
+          if (up.error && !/exist|duplicate/i.test(up.error.message || '')) throw this.fail('画像をアップロードできなかったよ（' + up.error.message + '）');
+          const c = await sb.rpc('confirm_image', { p_path: path });
+          if (c.error) throw this.fail('アップロードの確認に失敗したよ');
+          if (!(c.data && c.data.ok)) {
+            if (c.data && c.data.code === 'expired' && attempt === 0) continue;   // 予約が切れていたら、取り直す
+            throw this.fail('アップロードの確認に失敗したよ（' + ((c.data && c.data.code) || '') + '）');
+          }
+        }
+        if (verify) {   // 移行のときだけ：保存した画像を読み戻して SHA-256 を照合する
+          const dl = await sb.storage.from('images').download(path);
+          if (dl.error || !dl.data) throw this.fail('保存した画像を読み戻せなかったよ');
+          if ((await this.sha256(dl.data)) !== sha) throw this.fail('保存した画像が元と一致しなかったよ');
+        }
+        return 'mossimg:' + path;
+      }
+      throw this.fail('アップロードの予約が切れてしまったよ。もう一度試してね');
+    },
+    async refreshUsage() {
+      if (!this.ready()) return;
+      try {
+        const r = await Cloud.sb.rpc('my_usage');
+        if (r.error || !r.data) return;
+        this.usage = r.data; this.maxFile = Number(r.data.max_file) || this.maxFile;
+        const pct = r.data.user_limit ? (r.data.mine * 100) / r.data.user_limit : 0;
+        if (pct >= (r.data.warn_percent || 80) && !this.warned) { this.warned = true; toast('画像の容量が ' + Math.floor(pct) + '% になったよ。上限に近いよ'); }
+        renderAccount();
+      } catch (e) {}
+    },
+    usageText() { const u = this.usage; return u ? mb(u.mine) + 'MB / ' + mb(u.user_limit) + 'MB' : '確認中…'; },
+    /* ---- 表示：参照 → 署名つきURL ---- */
+    async sign(paths) {
+      const now = Date.now(), need = paths.filter((p) => !(this.urls[p] && this.urls[p].exp > now + 300000));
+      if (need.length && this.ready()) {
+        const r = await Cloud.sb.storage.from('images').createSignedUrls(need, 3600);
+        if (!r.error) (r.data || []).forEach((x) => { if (x.signedUrl) this.urls[x.path] = { url: x.signedUrl, exp: now + 3600000 }; });
+      }
+    },
+    urlOf(ref) { const p = String(ref).replace(/^mossimg:/, ''); return this.urls[p] && this.urls[p].url; },
+    async url(v) { if (!this.isRef(v)) return v; await this.sign([v.slice(8)]); return this.urlOf(v) || ''; },
+    scan(root) {
+      const out = [];
+      const test = (el) => {
+        if (el.nodeType !== 1 || el.dataset.mfail) return;
+        if ((el.tagName === 'IMG' && (el.getAttribute('src') || '').indexOf('mossimg:') === 0) || (el.getAttribute('style') || '').indexOf('mossimg:') >= 0) out.push(el);
+      };
+      test(root);
+      if (root.querySelectorAll) root.querySelectorAll('img[src^="mossimg:"],[style*="mossimg:"]').forEach(test);
+      return out;
+    },
+    async apply(els) {
+      const refs = new Set();
+      els.forEach((el) => { ((el.tagName === 'IMG' ? el.getAttribute('src') : '') + ' ' + (el.getAttribute('style') || '')).replace(IMG_REF, (m) => { refs.add(m.slice(8)); return m; }); });
+      if (!refs.size) return;
+      await this.sign([...refs]);
+      els.forEach((el) => {
+        let ok = true;
+        if (el.tagName === 'IMG') { const s = el.getAttribute('src') || ''; if (s.indexOf('mossimg:') === 0) { const u = this.urlOf(s); if (u) el.setAttribute('src', u); else ok = false; } }
+        const st = el.getAttribute('style') || '';
+        if (st.indexOf('mossimg:') >= 0) { const ns = st.replace(IMG_REF, (m) => this.urlOf(m) || m); if (ns.indexOf('mossimg:') >= 0) ok = false; el.setAttribute('style', ns); }
+        if (!ok) el.dataset.mfail = '1';   // 取れなかったときは、何度も試さない（次に描き直されたときにやり直す）
+      });
+    },
+    watch() {   // 画面に出てきた「参照」を、自動で表示できるURLに置き換える
+      let q = new Set(), t = 0;
+      const flush = () => { t = 0; const els = [...q].filter((e) => document.contains(e)); q = new Set(); this.apply(els).catch(() => {}); };
+      const add = (el) => { this.scan(el).forEach((e) => q.add(e)); if (q.size && !t) t = setTimeout(flush, 30); };
+      new MutationObserver((ms) => ms.forEach((m) => { if (m.type === 'attributes') add(m.target); else m.addedNodes.forEach((n) => { if (n.nodeType === 1) add(n); }); }))
+        .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'style'] });
+      add(document.body);
+    }
+  };
+
+  /* ---------- 既存の画像（data:URL）をサーバーへ移す ---------- */
+  function mapImages(node, fn) {   // 入れ子のデータの中の文字列を fn で置き換える（置き換えた数を返す）
+    let n = 0;
+    const go = (o) => {
+      const keys = Array.isArray(o) ? o.map((_, i) => i) : Object.keys(o);
+      keys.forEach((k) => {
+        const v = o[k];
+        if (typeof v === 'string') { const r = fn(v); if (r !== v) { o[k] = r; n++; } }
+        else if (v && typeof v === 'object') go(v);
+      });
+    };
+    if (node && typeof node === 'object') go(node);
+    return n;
+  }
+  const isDataImg = (s) => s.indexOf('data:image/') === 0;
+
+  const Mig = {
+    running: false, stop: false, state: null,
+    scan() {
+      const urls = new Map(); let docsN = 0;
+      allDocs().forEach((it) => {
+        let has = false;
+        mapImages({ cover: it.cover, data: it.data }, (s) => { if (isDataImg(s)) { has = true; urls.set(s, s.length * 0.75); } return s; });
+        if (has) docsN++;
+      });
+      ['avatar', 'banner'].forEach((k) => { if (typeof prof[k] === 'string' && isDataImg(prof[k])) urls.set(prof[k], prof[k].length * 0.75); });
+      Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => mapImages(h.snap, (s) => { if (isDataImg(s)) urls.set(s, s.length * 0.75); return s; })));
+      let bytes = 0; urls.forEach((v) => { bytes += v; });
+      return { urls: urls, docs: docsN, bytes: bytes };
+    },
+    async backup() {
+      const data = { app: 'moss dim', kind: 'backup', at: new Date().toISOString(), docs: docs.items, trash: docs.trash, folders: docs.folders, collections: docs.collections, history: docs.history, profile: prof, templates: myTpl };
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const name = 'moss-dim-backup-' + fmtDate(new Date()).replace(/\D/g, '') + '.json';
+      try {
+        const f = new File([blob], name, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f] }); return; }
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
+    async run() {
+      if (this.running) return;
+      this.running = true; this.stop = false;
+      const S = this.state = { phase: 'run', total: 0, done: 0, ok: 0, fails: [], note: '', swapped: 0, kept: 0 };
+      renderMig();
+      try {
+        if (!Img.ready()) throw new Error('ログインしてから移行してね');
+        S.note = 'サーバーへの保存を確認しているよ…'; renderMig();
+        if (Cloud.lsGet('mossDirty') === '1') { const ok = await Cloud.push(); if (!ok) throw new Error('サーバーへの保存がまだ終わっていないよ。ネットの接続を確認して、もう一度試してね'); }
+        const sc = this.scan(); S.total = sc.urls.size;
+        const map = {};
+        for (const u of sc.urls.keys()) {
+          if (this.stop) break;
+          S.note = '画像を移行中… ' + (S.done + 1) + ' / ' + S.total; renderMig();
+          try {
+            const raw = await (await fetch(u)).blob();
+            let mime = (/^data:(image\/[a-z+.-]+)/.exec(u) || [])[1] || raw.type;
+            if (mime === 'image/jpg') mime = 'image/jpeg';
+            if (!IMG_EXT[mime]) throw Img.fail('対応していない形式の画像があったよ');
+            const blob = raw.type === mime ? raw : new Blob([raw], { type: mime });
+            if (blob.size > Img.maxFile) throw Img.fail('10MBを超えている画像があったよ');
+            map[u] = await Img.upload(blob, mime, true);   // 保存→読み戻し→SHA-256を照合
+            S.ok++;
+          } catch (e) { S.fails.push(Img.msg(e)); }
+          S.done++;
+        }
+        // 資料ごとに切り替え：その資料の画像が全部そろったときだけ。切り替える前に、元のデータをサーバーに控えておく
+        S.note = '資料を切り替えているよ…'; renderMig();
+        const uid = Cloud.session.user.id;
+        for (const it of allDocs()) {
+          let has = false, all = true;
+          mapImages({ cover: it.cover, data: it.data }, (s) => { if (isDataImg(s)) { has = true; if (!map[s]) all = false; } return s; });
+          if (!has) continue;
+          if (!all) { S.kept++; continue; }
+          const bk = await Cloud.sb.from('docs').update({ data_backup: { cover: it.cover, data: it.data, at: Date.now() } }).eq('owner', uid).eq('id', it.id).is('data_backup', null);
+          if (bk.error) { S.kept++; S.fails.push('「' + (it.title || '無題') + '」の控えを作れなかったので、そのままにしたよ'); continue; }
+          const box = { cover: it.cover, data: it.data };
+          mapImages(box, (s) => (isDataImg(s) && map[s]) || s);
+          it.cover = box.cover;
+          S.swapped++;
+        }
+        ['avatar', 'banner'].forEach((k) => { if (typeof prof[k] === 'string' && isDataImg(prof[k]) && map[prof[k]]) prof[k] = map[prof[k]]; });
+        Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => mapImages(h.snap, (s) => (isDataImg(s) && map[s]) || s)));
+        saveProf();
+        persistQuiet();
+        Cloud.markDirty(true);
+        S.note = 'サーバーに保存しているよ…'; renderMig();
+        await Cloud.push();
+        S.phase = 'done';
+        Img.refreshUsage();
+        renderDocs(); renderProfile(); renderHome();
+      } catch (e) {
+        S.phase = 'error'; S.note = (e && (e.userMsg || e.message)) || String(e);
+      }
+      this.running = false;
+      renderMig(); renderAccount();
+    }
+  };
+
+  function renderMig() {
+    const S = Mig.state, el = $('migBody');
+    if (!S || S.phase === 'intro') {
+      const sc = Mig.scan();
+      if (!sc.urls.size) { el.innerHTML = '<div class="nnote" style="margin:0">移行が必要な画像は、ないよ。</div>'; return; }
+      const rest = Img.usage ? Img.usage.user_limit - Img.usage.mine : null;
+      const over = rest !== null && sc.bytes > rest;
+      el.innerHTML = '<div class="dd-sec"><h3>移行する画像</h3><div style="font-size:14px;line-height:1.9">画像 ' + sc.urls.size + '枚（約' + (sc.bytes / 1048576).toFixed(1) + 'MB）／資料 ' + sc.docs + '件</div>' +
+        '<div class="nnote" style="margin:6px 0 0">いまは画像が資料のデータの中に入っていて、容量をたくさん使うんだ。専用の保存場所に移すと、軽くなるよ。移した画像は、画質を変えずにそのまま保存して、読み戻して一致を確認するよ。</div></div>' +
+        (over ? '<div class="nnote" style="color:var(--danger)">いまの空き容量（' + mb(rest) + 'MB）では、全部は入らないかもしれないよ。入らなかった画像は、そのまま残るよ。</div>' : '') +
+        '<div class="dd-sec"><h3>① バックアップを保存する</h3><div class="nnote" style="margin:0 0 8px">念のため、いまのデータをファイルに保存してね。</div>' +
+        '<button type="button" class="small-btn" data-mig="backup">バックアップを保存</button>' +
+        '<label class="check" style="border:none;padding:10px 0 0;font-size:13px"><input type="checkbox" id="migOk">バックアップを保存したよ</label></div>' +
+        '<button type="button" class="btn primary" data-mig="start" id="migStart" style="width:100%" disabled>② 移行を始める</button>';
+      return;
+    }
+    if (S.phase === 'run') {
+      const pct = S.total ? Math.round((S.done * 100) / S.total) : 0;
+      el.innerHTML = '<div class="dd-sec"><h3>移行中</h3><div style="font-size:14px;line-height:1.8">' + esc(S.note) + '</div>' +
+        '<div style="height:10px;border-radius:999px;background:var(--soft);margin:12px 0;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--accent)"></div></div>' +
+        '<div class="nnote" style="margin:0">画面を閉じずに、このままにしてね。</div></div>' +
+        '<button type="button" class="small-btn" data-mig="stop">中止する</button>';
+      return;
+    }
+    const failed = S.fails.length;
+    el.innerHTML = '<div class="dd-sec"><h3>' + (S.phase === 'done' ? (failed ? '一部できなかったよ' : '移行が終わったよ') : '途中で止まったよ') + '</h3>' +
+      '<div style="font-size:14px;line-height:1.9">画像 ' + S.ok + '枚を保存／資料 ' + S.swapped + '件を切り替え' + (S.kept ? '／そのままの資料 ' + S.kept + '件' : '') + '</div>' +
+      (S.phase === 'error' ? '<div class="nnote" style="color:var(--danger)">' + esc(S.note) + '</div>' : '') +
+      (failed ? '<div class="nnote" style="margin:8px 0 0">できなかったもの：</div><ul style="margin:4px 0 0;padding-left:20px;font-size:13px;line-height:1.8">' + [...new Set(S.fails)].map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') + '</div>' +
+      (failed || S.phase === 'error' ? '<button type="button" class="btn primary" data-mig="retry" style="width:100%;margin-bottom:8px">もう一度試す</button>' : '') +
+      '<button type="button" class="btn" data-back-btn style="width:100%">閉じる</button>';
+  }
+  window.mossOpenMig = () => { Mig.state = null; renderMig(); $('imgMig').classList.add('open'); };
+  $('migBody').addEventListener('change', (e) => { if (e.target.id === 'migOk') $('migStart').disabled = !e.target.checked; });
+  $('migBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-mig],[data-back-btn]'); if (!b) return;
+    if (b.hasAttribute('data-back-btn')) { $('imgMig').classList.remove('open'); return; }
+    const a = b.dataset.mig;
+    if (a === 'backup') { await Mig.backup(); }
+    else if (a === 'start' || a === 'retry') { Mig.run(); }
+    else if (a === 'stop') { Mig.stop = true; b.disabled = true; b.textContent = '止めているよ…'; }
+  });
+
   $('gTabLogin').addEventListener('click', () => Cloud.setMode('login'));
   $('gTabSignup').addEventListener('click', () => Cloud.setMode('signup'));
   $('gateForm').addEventListener('submit', (e) => { e.preventDefault(); Cloud.submit(); });
@@ -4866,6 +5210,8 @@
   cloudHook = null;
   const _persist = DocStore.persist.bind(DocStore);
   DocStore.persist = function () { _persist(); cloudDirty(); };
+  window.mossImg = Img; window.mossMig = Mig;
+  Img.watch();
   Cloud.init();
 
   /* ==================== 最初の表示 ==================== */
