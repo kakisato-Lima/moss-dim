@@ -1919,6 +1919,14 @@
   </div>
 </div>
 
+<section class="notif" id="updDetail">
+  <div class="notif-top">
+    <button class="notif-close" data-back aria-label="戻る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+    <div class="notif-title" style="flex:1">アップデートのお知らせ</div>
+  </div>
+  <div style="flex:1;overflow-y:auto"><div class="dd-wrap" id="updBody"></div></div>
+</section>
+
 <section class="notif" id="tplApply">
   <div class="notif-top">
     <button class="notif-close" data-back aria-label="戻る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
@@ -4314,6 +4322,30 @@
   } catch (e) {}
   const saveNset = () => { try { localStorage.setItem('mossNotifSet', JSON.stringify(nset)); } catch (e) {} cloudDirty(); };
 
+  /* ---------- アップデートのお知らせ ----------
+     新しいお知らせは、この配列の【先頭】に1つ足して index.html を入れ替えるだけ。
+     サイトを開いたとき、まだ届いていないものが自動で「お知らせ」に入るよ（同じものは二度入らない）。
+     version は仮の付け方。ルールはちゃぴと決める。 */
+  const UPDATES = [
+    {
+      id: 'u-2026-11-21', date: '2026-11-21', version: '0.2.0',
+      title: 'アカウント機能とテンプレート連携を追加しました',
+      summary: 'ログインしてデータを保存できるようになり、制作画面と資料の編集画面でテンプレートを共通で使えるようになりました。',
+      added: [
+        'メールアドレスとパスワードでのアカウント登録・ログイン',
+        '資料・プロフィール・設定がアカウントに自動で保存され、他の端末でも同じデータを見られる',
+        '資料の編集画面で、テンプレート項目を追加したり、オリジナルテンプレートに保存したりできる',
+        '既存の資料に、選んだ項目をまとめて追加できる（制作画面のオリジナルテンプレートから）',
+        '資料の項目を「非表示」にできる（入力した内容は残り、あとで戻せる）'
+      ],
+      fixed: [
+        'プロフィールの変更が、再読み込みで消えてしまう問題を修正',
+        'ナイトモードで読みにくかった文字の色を修正'
+      ]
+    }
+  ];
+  const updById = (id) => UPDATES.find((u) => u.id === id);
+
   function loadNotifs() {
     try { const a = JSON.parse(localStorage.getItem('mossNotifs') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
@@ -4322,10 +4354,10 @@
     items: loadNotifs(),
     save() { try { localStorage.setItem('mossNotifs', JSON.stringify(this.items)); } catch (e) {} },
     /* 通知を追加する。設定でOFFの種類は追加しない。成功したら true */
-    add(cat, kind, title, text) {
+    add(cat, kind, title, text, extra) {
       if (!NSET_DEF[cat] || !nset.cat[cat] || !nset.item[cat + '.' + kind]) return false;
       const id = this.items.reduce((m, n) => Math.max(m, n.id), 0) + 1;
-      this.items.push({ id, cat, title, text: text || '', at: Date.now(), read: false });
+      this.items.push(Object.assign({ id, cat, title, text: text || '', at: Date.now(), read: false }, extra || {}));
       this.save();
       return true;
     },
@@ -4338,6 +4370,34 @@
 
   /* 動作確認用：ブラウザのコンソールで mossNotify('react','like','〇〇さんがいいねしました') のように呼ぶと通知が1件増えるよ */
   window.mossNotify = (cat, kind, title, text) => { const ok = NotifStore.add(cat, kind, title, text); renderNotif(); return ok; };
+
+  /* 届いていないアップデートを「お知らせ」に入れる（古い順に入れるので、新しいものが上に並ぶ） */
+  function syncUpdates() {
+    let done = [];
+    try { done = JSON.parse(localStorage.getItem('mossUpdDone') || '[]'); if (!Array.isArray(done)) done = []; } catch (e) { done = []; }
+    let added = 0;
+    UPDATES.slice().reverse().forEach((u) => {
+      if (done.includes(u.id)) return;
+      const d = u.date.split('-').map(Number);
+      const ok = NotifStore.add('news', 'other', 'アップデート v' + u.version + '：' + u.title, u.summary, { upd: u.id, at: new Date(d[0], d[1] - 1, d[2], 12).getTime() });
+      if (ok) { done.push(u.id); added++; }   // 設定でOFFのときは届けない（ONにしたとき届く）
+    });
+    if (added) { try { localStorage.setItem('mossUpdDone', JSON.stringify(done)); } catch (e) {} }
+    return added;
+  }
+
+  function openUpdate(id) {
+    const u = updById(id);
+    if (!u) { toast('このお知らせの詳しい内容は、もう見られないよ'); return; }
+    const list = (arr) => '<ul style="margin:6px 0 0;padding-left:20px;line-height:1.9;font-size:14px;color:var(--text)">' + arr.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+    $('updBody').innerHTML =
+      '<div class="nnote" style="margin:0 0 6px">' + esc(u.date.replace(/-/g, '/')) + '　・　バージョン ' + esc(u.version) + '</div>' +
+      '<h2 style="margin:0 0 10px;font-size:18px;color:var(--strong);line-height:1.5">' + esc(u.title) + '</h2>' +
+      '<div style="font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:8px">' + esc(u.summary) + '</div>' +
+      (u.added && u.added.length ? '<div class="dd-sec"><h3>追加した機能</h3>' + list(u.added) + '</div>' : '') +
+      (u.fixed && u.fixed.length ? '<div class="dd-sec"><h3>修正・改善</h3>' + list(u.fixed) + '</div>' : '');
+    $('updDetail').classList.add('open');
+  }
 
   const nState = { cat: 'react', select: false, picked: new Set() };
 
@@ -4359,6 +4419,7 @@
         (nState.select ? '<input type="checkbox" class="ncheck"' + (nState.picked.has(n.id) ? ' checked' : '') + '>' : '<span class="udot"></span>') +
         '<div class="nbody"><div class="ntitle">' + esc(n.title) + '</div>' +
         (n.text ? '<div class="ntext">' + esc(n.text) + '</div>' : '') +
+        (n.upd ? '<div class="ntext" style="color:var(--accent)">タップして詳しく見る ›</div>' : '') +
         '<div class="ntime">' + timeAgo(n.at) + '</div></div>' +
         (nState.select ? '' : '<button class="ndel" data-del="' + n.id + '" aria-label="削除">' + svg('trash') + '</button>') +
         '</div>'
@@ -4435,12 +4496,15 @@
         if (nState.picked.has(id)) nState.picked.delete(id); else nState.picked.add(id);
       } else {
         NotifStore.markRead(id);
+        const nn = NotifStore.items.find((x) => x.id === id);
+        if (nn && nn.upd) openUpdate(nn.upd);
       }
       renderNotif();
     }
   });
 
   $('notifClose').addEventListener('click', leaveSelect);
+  syncUpdates();
   renderNotif();
 
   /* ---------- 通知設定ページ ---------- */
@@ -4466,6 +4530,7 @@
     else if (i) nset.item[i.dataset.nitem] = !nset.item[i.dataset.nitem];
     else return;
     saveNset();
+    if (syncUpdates()) { renderNotif(); toast('お知らせをONにしたので、届いていたアップデートを入れたよ'); }
     renderNotifSettings();
   });
 
@@ -4493,7 +4558,7 @@
      ブラウザ内の保存(localStorage)は、そのまま「手元のコピー」として残る。 */
   const SB_URL = 'https://frwxpnieoqvarjudxzru.supabase.co';
   const SB_KEY = 'sb_publishable_ByafmZMPSOpOlgDW_4rpqg_1dfhKfFe';
-  const LS_WIPE = ['mossKnown', 'mossDocsV1', 'mossTpl', 'mossNotifSet', 'mossNotifs', 'mossProf', 'mossOwner', 'mossDirty'];
+  const LS_WIPE = ['mossUpdDone', 'mossKnown', 'mossDocsV1', 'mossTpl', 'mossNotifSet', 'mossNotifs', 'mossProf', 'mossOwner', 'mossDirty'];
 
   const Cloud = {
     sb: null, session: null, status: '未保存', busy: false, again: false, timer: null, known: {}, mode: 'login',
