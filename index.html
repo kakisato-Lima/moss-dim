@@ -4574,7 +4574,7 @@
       }
       this.showGate('データを確認しているよ…', false, false);
       try {
-        const cloudDocs = await this.sb.from('docs').select('id', { count: 'exact', head: true });
+        const cloudDocs = await this.sb.from('docs').select('id', { count: 'exact' }).limit(1);   // HEADだとエラーの中身が空になるので、ふつうの読み込みにする
         if (cloudDocs.error) throw cloudDocs.error;
         const st = await this.sb.from('user_settings').select('owner').maybeSingle();
         if (st.error) throw st.error;
