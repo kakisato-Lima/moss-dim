@@ -4570,6 +4570,7 @@
           if (!hadKnown) { this.docRows().forEach((r) => { this.known[r.doc.id] = this.hash(JSON.stringify(r)); }); this.saveKnown(); }
           this.setStatus('保存済み');
         }
+        setTimeout(() => this.checkRemote().catch(() => {}), 1200);
         return;
       }
       this.showGate('データを確認しているよ…', false, false);
@@ -4604,6 +4605,24 @@
       } catch (e) {
         this.showGate('データの確認に失敗したよ：' + this.errText(e), false, true);
       }
+    },
+
+    /* 他の端末で変更されていないか確認して、違っていたらサーバーの最新を読み込む */
+    async checkRemote() {
+      if (!this.session || !this.sb || this.busy || this.lsGet('mossDirty') === '1') return;
+      if ($('docDetail').classList.contains('open') || !$('createForm').classList.contains('hide')) return;   // 編集中は邪魔しない
+      let last = 0; try { last = Number(sessionStorage.getItem('mossAutoPull') || 0); } catch (e) {}
+      if (Date.now() - last < 20000) return;
+      const r = await this.sb.from('docs').select('id,updated_ms,deleted_ms');
+      if (r.error) return;
+      const cloud = {}, local = {};
+      (r.data || []).forEach((x) => { cloud[x.id] = (Number(x.updated_ms) || 0) + '/' + (x.deleted_ms ? 1 : 0); });
+      this.docRows().forEach((x) => { local[x.doc.id] = (x.doc.updated_ms || 0) + '/' + (x.doc.deleted_ms ? 1 : 0); });
+      const ck = Object.keys(cloud);
+      if (!ck.length && Object.keys(local).length) { this.known = {}; this.saveKnown(); this.markDirty(true); return; }   // サーバーが空なら、手元のデータを送り直す
+      if (ck.length === Object.keys(local).length && ck.every((k) => local[k] === cloud[k])) return;
+      try { sessionStorage.setItem('mossAutoPull', String(Date.now())); } catch (e) {}
+      await this.pull(false);
     },
 
     wipeLocal() {
@@ -4774,6 +4793,8 @@
     try { await Cloud.pull(false); } catch (e) { toast(Cloud.errText(e)); }
   }, '読み込む');
   window.mossCloudInfo = () => ({ mail: Cloud.session ? Cloud.session.user.email : '', status: Cloud.status });
+  let lastVis = 0;
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastVis > 60000) { lastVis = Date.now(); Cloud.checkRemote().catch(() => {}); } });
   window.addEventListener('online', () => { if (Cloud.session && Cloud.lsGet('mossDirty') === '1') Cloud.pushSoon(500); });
   window.addEventListener('pagehide', () => { if (Cloud.session && Cloud.lsGet('mossDirty') === '1') Cloud.push(); });
   window.mossCloud = Cloud;
