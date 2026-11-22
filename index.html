@@ -5129,6 +5129,7 @@
           const box = { cover: it.cover, data: it.data };
           mapImages(box, (s) => (isDataImg(s) && map[s]) || s);
           it.cover = box.cover;
+          it.data = box.data;
           S.swapped++;
         }
         ['avatar', 'banner'].forEach((k) => { if (typeof prof[k] === 'string' && isDataImg(prof[k]) && map[prof[k]]) prof[k] = map[prof[k]]; });
@@ -5137,7 +5138,8 @@
         persistQuiet();
         Cloud.markDirty(true);
         S.note = 'サーバーに保存しているよ…'; renderMig();
-        await Cloud.push();
+        const pushed = await Cloud.push();
+        if (!pushed) throw new Error('画像は移したけど、サーバーへの保存に失敗したよ。ネットの接続を確認して、もう一度「移行」を押してね（移した分はそのまま使われるよ）');
         S.phase = 'done';
         Img.refreshUsage();
         renderDocs(); renderProfile(); renderHome();
