@@ -5134,16 +5134,22 @@
         }
         ['avatar', 'banner'].forEach((k) => { if (typeof prof[k] === 'string' && isDataImg(prof[k]) && map[prof[k]]) prof[k] = map[prof[k]]; });
         // 履歴：手元を新しい参照に書き換え、サーバーに送信済みの同じ履歴（日時・理由はそのまま）も snap だけ更新する
-        const histFix = [];
-        Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => {
-          const had = JSON.stringify(h.snap).indexOf('data:image') >= 0;
-          mapImages(h.snap, (s) => (isDataImg(s) && map[s]) || s);
-          if (had && JSON.stringify(h.snap).indexOf('data:image') < 0) histFix.push({ doc: Number(k), at: h.at, snap: h.snap });
-        }));
+        // 変換後の snap は別のデータとして作り、サーバーの更新が成功した履歴だけ手元に反映する
+        // （失敗した履歴は手元もそのまま残るので、同じ画面で再実行しても、もう一度処理される）
         S.note = '編集履歴を切り替えているよ…'; renderMig();
-        for (const f of histFix) {
-          const r = await Cloud.sb.from('doc_history').update({ snap: f.snap }).eq('owner', uid).eq('doc_id', f.doc).eq('at_ms', f.at);
-          if (r.error) throw r.error;
+        let histFailed = 0, histErr = null;
+        for (const k of Object.keys(docs.history)) {
+          for (const h of (docs.history[k] || [])) {
+            if (JSON.stringify(h.snap).indexOf('data:image') < 0) continue;
+            const snap2 = JSON.parse(JSON.stringify(h.snap));
+            mapImages(snap2, (s) => (isDataImg(s) && map[s]) || s);
+            if (JSON.stringify(snap2).indexOf('data:image') >= 0) continue;   // 画像が足りない（上の「できなかったもの」に出る）：次回に回す
+            try {
+              const r = await Cloud.sb.from('doc_history').update({ snap: snap2 }).eq('owner', uid).eq('doc_id', Number(k)).eq('at_ms', h.at);
+              if (r.error) throw r.error;
+              h.snap = snap2;
+            } catch (e) { histFailed++; histErr = histErr || e; }
+          }
         }
         saveProf();
         persistQuiet();
@@ -5151,11 +5157,12 @@
         S.note = 'サーバーに保存しているよ…'; renderMig();
         const pushed = await Cloud.push();
         if (!pushed) throw new Error('画像は移したけど、サーバーへの保存に失敗したよ。ネットの接続を確認して、もう一度「移行」を押してね（移した分はそのまま使われるよ）');
+        if (histFailed) throw new Error('編集履歴 ' + histFailed + ' 件の切り替えができなかったよ（' + ((histErr && (histErr.message || histErr.userMsg)) || '画像の移行が途中') + '）。もう一度「移行」を押してね。できた分はそのまま残るよ');
         // サーバーの履歴に古い画像データが残っていないか確認（残っていたら完了にしない）
         const hv = await Cloud.sb.from('doc_history').select('doc_id,at_ms,snap');
         if (hv.error) throw hv.error;
         const left = (hv.data || []).filter((r) => JSON.stringify(r.snap).indexOf('data:image') >= 0).length;
-        if (left) throw new Error('サーバーの編集履歴に、古い画像のままのものが ' + left + ' 件残っているよ。もう一度「移行」を押してね');
+        if (left && !S.fails.length) throw new Error('サーバーの編集履歴に、古い画像のままのものが ' + left + ' 件残っているよ。もう一度「移行」を押してね');
         S.phase = 'done';
         Img.refreshUsage();
         renderDocs(); renderProfile(); renderHome();
