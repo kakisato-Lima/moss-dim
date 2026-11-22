@@ -5133,13 +5133,29 @@
           S.swapped++;
         }
         ['avatar', 'banner'].forEach((k) => { if (typeof prof[k] === 'string' && isDataImg(prof[k]) && map[prof[k]]) prof[k] = map[prof[k]]; });
-        Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => mapImages(h.snap, (s) => (isDataImg(s) && map[s]) || s)));
+        // 履歴：手元を新しい参照に書き換え、サーバーに送信済みの同じ履歴（日時・理由はそのまま）も snap だけ更新する
+        const histFix = [];
+        Object.keys(docs.history).forEach((k) => (docs.history[k] || []).forEach((h) => {
+          const had = JSON.stringify(h.snap).indexOf('data:image') >= 0;
+          mapImages(h.snap, (s) => (isDataImg(s) && map[s]) || s);
+          if (had && JSON.stringify(h.snap).indexOf('data:image') < 0) histFix.push({ doc: Number(k), at: h.at, snap: h.snap });
+        }));
+        S.note = '編集履歴を切り替えているよ…'; renderMig();
+        for (const f of histFix) {
+          const r = await Cloud.sb.from('doc_history').update({ snap: f.snap }).eq('owner', uid).eq('doc_id', f.doc).eq('at_ms', f.at);
+          if (r.error) throw r.error;
+        }
         saveProf();
         persistQuiet();
         Cloud.markDirty(true);
         S.note = 'サーバーに保存しているよ…'; renderMig();
         const pushed = await Cloud.push();
         if (!pushed) throw new Error('画像は移したけど、サーバーへの保存に失敗したよ。ネットの接続を確認して、もう一度「移行」を押してね（移した分はそのまま使われるよ）');
+        // サーバーの履歴に古い画像データが残っていないか確認（残っていたら完了にしない）
+        const hv = await Cloud.sb.from('doc_history').select('doc_id,at_ms,snap');
+        if (hv.error) throw hv.error;
+        const left = (hv.data || []).filter((r) => JSON.stringify(r.snap).indexOf('data:image') >= 0).length;
+        if (left) throw new Error('サーバーの編集履歴に、古い画像のままのものが ' + left + ' 件残っているよ。もう一度「移行」を押してね');
         S.phase = 'done';
         Img.refreshUsage();
         renderDocs(); renderProfile(); renderHome();
