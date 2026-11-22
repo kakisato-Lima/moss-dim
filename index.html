@@ -5145,8 +5145,11 @@
             mapImages(snap2, (s) => (isDataImg(s) && map[s]) || s);
             if (JSON.stringify(snap2).indexOf('data:image') >= 0) continue;   // 画像が足りない（上の「できなかったもの」に出る）：次回に回す
             try {
-              const r = await Cloud.sb.from('doc_history').update({ snap: snap2 }).eq('owner', uid).eq('doc_id', Number(k)).eq('at_ms', h.at);
+              // 同じ(owner,doc_id,at_ms)の行があれば snap を更新、無ければ同じ日時・理由で作る（件数も日時も増減しない）。
+              // 「0件でもエラーにならない」update は信用せず、実際に1行返ってきたときだけ成功にする
+              const r = await Cloud.sb.from('doc_history').upsert({ owner: uid, doc_id: Number(k), at_ms: h.at, reason: h.reason || '', snap: snap2 }, { onConflict: 'owner,doc_id,at_ms' }).select('doc_id,at_ms');
               if (r.error) throw r.error;
+              if (!r.data || r.data.length !== 1) throw new Error('サーバーの履歴を確認できなかった');
               h.snap = snap2;
             } catch (e) { histFailed++; histErr = histErr || e; }
           }
