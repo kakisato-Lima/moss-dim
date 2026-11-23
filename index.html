@@ -929,6 +929,18 @@
       white-space: nowrap;
     }
 
+    /* 読み方（ふりがな）：名前の上に小さく出す */
+    .yomi {
+      font-size: 10px;
+      color: var(--sub);
+      letter-spacing: .06em;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rd-yomi { font-size: 12px; margin-top: 10px; margin-bottom: -8px; }
+
     .item-meta {
       font-size: 11px;
       color: var(--sub);
@@ -2559,7 +2571,7 @@
       '<div class="item" data-id="' + it.id + '">' +
       '<div class="thumb" style="' + (it.cover ? 'background-image:url(\'' + it.cover + '\');background-size:cover;background-position:center' : grad(it.id)) + '"></div>' +
       '<div class="item-body">' +
-      '<div class="item-title">' + esc(it.title) + '</div>' +
+      yomiHTML(it.type, (it.data || {}).vals) + '<div class="item-title">' + esc(it.title) + '</div>' +
       '<div class="item-meta">' + TYPES[it.type].label + ' ・ ' + esc(it.updated) + '</div>' +
       '<div class="item-meta">' + svg('folder', 'mini') + ' ' + (it.folders.length ? esc(it.folders.join('、')) : 'フォルダなし') + '</div>' +
       (it.tags.length ? '<div class="item-tags">' + it.tags.map((t) => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>' : '') +
@@ -2751,6 +2763,14 @@
 
   const docById = (id) => docs.items.find((x) => x.id === id);
   const allDocs = () => docs.items.concat(docs.trash.map((t) => t.item));
+
+  /* 読み方（その資料の種類で「読み方」の項目が何番かを探して、入力された値を返す） */
+  function yomiOf(type, vals) {
+    const T = TYPES[type]; if (!T) return '';
+    const i = T.basic.findIndex((b) => b.label === '読み方');
+    return i < 0 || !vals ? '' : String(vals[i] || '').trim();
+  }
+  const yomiHTML = (type, vals, cls) => { const y = yomiOf(type, vals); return y ? '<div class="yomi' + (cls ? ' ' + cls : '') + '">' + esc(y) + '</div>' : ''; };
 
   function contentOf(it) {
     const d = it.data || {};
@@ -3223,7 +3243,7 @@
     let h = '';
     if (c.cover) h += '<img class="bimg dd-cover" src="' + c.cover + '" alt="表紙">';
     h += '<div class="dd-tags"><span class="tag">' + esc(T.label) + '</span>' + (c.tags || []).map((t) => '<span class="tag" style="background:var(--card);border:1px solid var(--line2)">' + esc(t) + '</span>').join('') + '</div>';
-    h += '<h2 class="rd-title">' + esc(c.title) + '</h2>';
+    h += yomiHTML(it.type, d.vals, 'rd-yomi') + '<h2 class="rd-title">' + esc(c.title) + '</h2>';
     h += '<div class="rd-meta">更新：' + fmtDT(it.updatedAt) + ' ・ 作成：' + fmtDT(it.createdAt) + '</div>';
     return h;
   }
