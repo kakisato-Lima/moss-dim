@@ -2035,6 +2035,8 @@
     down: '<polyline points="6 9 12 15 18 9"/>',
     trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
     bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+    layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/>',
     globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
     book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
     user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
@@ -2226,17 +2228,30 @@
     },
     chara: {
       label: 'キャラクター', icon: 'user', desc: '創作キャラクターの情報をまとめる',
-      basic: [{ label: '名前' }, { label: '種族' }, { label: '年齢' }, { label: '性格' }],
+      basic: [{ label: '名前' }, { label: '種族' }, { label: '年齢' }, { label: '性格' }, { label: '読み方' }], order: [0, 4, 1, 2, 3],
       extras: ['偽名', '能力', '特徴', '職業', '口調', '好き', '嫌い', '趣味', '特技', '誕生日', '体型・身長・体重・骨格'], memo: true, tagIdx: 1
     },
     other: {
       label: 'その他', icon: 'file', desc: '上のどれにも当てはまらない資料やメモを自由に作る',
-      basic: [{ label: 'タイトル' }, { label: 'カテゴリ' }, { label: '内容', long: true }],
+      basic: [{ label: 'タイトル' }, { label: 'カテゴリ' }, { label: '内容', long: true }, { label: '読み方' }], order: [0, 3, 1, 2],
       extras: [], memo: false, tagIdx: 1
+    },
+    /* 仮の項目（未決定）：イラスト・漫画の入力項目は、ちゃぴの仕様が決まるまでの仮置き。項目は後から入れ替えられる */
+    illust: {
+      label: 'イラスト', icon: 'image', desc: '1枚絵やイラスト作品の情報をまとめる',
+      basic: [{ label: 'タイトル' }, { label: '読み方' }, { label: 'ジャンル' }, { label: '説明', long: true }],
+      extras: ['制作状況', '制作日', '使用ツール', '登場人物', '関連する世界観', '制作メモ'], memo: true, tagIdx: 2
+    },
+    manga: {
+      label: '漫画', icon: 'layout', desc: '漫画作品の情報をまとめる',
+      basic: [{ label: 'タイトル' }, { label: '読み方' }, { label: 'ジャンル' }, { label: 'あらすじ', long: true }],
+      extras: ['制作状況', '制作開始日', '完成日', '話数・ページ数', '登場人物', '関連する世界観', '制作メモ'], memo: true, tagIdx: 2
     }
   };
+  /* 基本項目を画面に並べる順番。保存は項目の番号で行うので、並びを変えても既存のデータはずれない */
+  const bOrder = (T) => T.order || T.basic.map((_, i) => i);
 
-  const myTpl = { world: [], work: [], chara: [], other: [] };
+  const myTpl = { world: [], work: [], chara: [], other: [], illust: [], manga: [] };
   try {
     const savedTpl = JSON.parse(localStorage.getItem('mossTpl') || 'null');
     if (savedTpl) Object.keys(myTpl).forEach((k) => { if (Array.isArray(savedTpl[k])) myTpl[k] = savedTpl[k].filter((x) => typeof x === 'string'); });
@@ -2302,7 +2317,8 @@
       (cur.cover ? '<button type="button" class="small-btn danger" data-xact="coverdel">表紙を外す</button>' : '') + '</div></div>' +
       '<div class="fgroup-title">基本項目</div>';
 
-    T.basic.forEach((b, i) => {
+    bOrder(T).forEach((i) => {
+      const b = T.basic[i];
       const v = cur.vals[i] || '';
       h += '<div class="frow"><span class="frow-label">' + esc(b.label) + '</span>';
       if (b.long) {
@@ -2943,7 +2959,7 @@
     L.push('【' + T.label + '】' + ((c.tags || []).length ? ' ' + c.tags.map((t) => '#' + t).join(' ') : ''));
     L.push('');
     const basic = [];
-    T.basic.forEach((b, i) => { if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push(b.label + '：' + v); });
+    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push(b.label + '：' + v); });
     d.extras.forEach((x) => { if ((x.value || '').trim()) basic.push(x.name + '：' + x.value.trim()); });
     if (basic.length) { L.push('■ 基本情報'); basic.forEach((x) => L.push(x)); L.push(''); }
     const bl = [];
@@ -3059,7 +3075,7 @@
 
     // 基本情報
     const basic = [];
-    T.basic.forEach((b, i) => { if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push([b.label, v]); });
+    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push([b.label, v]); });
     d.extras.forEach((x) => { if ((x.value || '').trim()) basic.push([x.name, x.value.trim()]); });
     if (basic.length) {
       text('基本情報', 30, '#4F7F6F', { bold: true, gap: 14 });
@@ -3217,7 +3233,8 @@
     const d = c.data;
     let h = '<div class="dd-sec"><h3>基本情報</h3>';
     let n = 0;
-    T.basic.forEach((b, i) => {
+    bOrder(T).forEach((i) => {
+      const b = T.basic[i];
       if (i === 0) return;
       const v = (d.vals[i] || '').trim();
       if (v) { n++; h += '<div class="dd-row"><span class="l">' + esc(b.label) + '</span><span class="v">' + esc(v) + '</span></div>'; }
@@ -3361,7 +3378,8 @@
       (e.cover ? '<button type="button" class="small-btn danger" data-ed="coverdel">表紙を外す</button>' : '') + '</div></div></div>';
 
     h += '<div class="dd-sec"><h3>基本情報</h3>';
-    T.basic.forEach((b, i) => {
+    bOrder(T).forEach((i) => {
+      const b = T.basic[i];
       const v = d.vals[i] || '';
       h += '<div class="frow"><span class="frow-label">' + esc(b.label) + (i === 0 ? '（必須）' : '') + '</span>' +
         (b.long ? '<textarea data-ev="' + i + '" rows="4">' + esc(v) + '</textarea>' : '<input type="text" data-ev="' + i + '" value="' + esc(v) + '">') + '</div>';
@@ -4574,6 +4592,7 @@
         m = [e.message, e.error_description, e.code && ('code:' + e.code), e.status && ('status:' + e.status), e.details, e.hint].filter(Boolean).join(' / ');
         if (!m) { try { m = JSON.stringify(e); } catch (x) { m = String(e); } }
       } else m = String(e || '');
+      if (/supabase_types\.sql|docs_type_check/i.test(m)) return 'イラスト・漫画を保存するための設定（supabase_types.sql）が、まだサーバーに入っていないよ。SQLを実行してね';
       if (/Invalid login/i.test(m)) return 'メールアドレスかパスワードが違うよ';
       if (/already registered|already been registered/i.test(m)) return 'このメールアドレスはもう登録されているよ。ログインしてみてね';
       if (/at least/i.test(m)) return 'パスワードは8文字以上にしてね';
@@ -4750,11 +4769,16 @@
       const uid = this.session.user.id;
       try {
         const rows = this.docRows();
+        let typeWait = 0;
         for (const r of rows) {
           const sig = this.hash(JSON.stringify(r));
           if (this.known[r.doc.id] === sig) continue;
           const a = await this.sb.from('docs').upsert(Object.assign({ owner: uid }, r.doc), { onConflict: 'owner,id' });
-          if (a.error) throw a.error;
+          if (a.error) {
+            // イラスト・漫画を入れるSQL(supabase_types.sql)がまだのとき：その資料だけ後回しにして、ほかの資料は保存を続ける
+            if (/docs_type_check|violates check constraint/i.test(String(a.error.message || '')) && (r.doc.type === 'illust' || r.doc.type === 'manga')) { typeWait++; continue; }
+            throw a.error;
+          }
           const b = await this.sb.from('doc_private').upsert({ owner: uid, doc_id: r.doc.id, memo: r.memo }, { onConflict: 'owner,doc_id' });
           if (b.error) throw b.error;
           this.known[r.doc.id] = sig; this.saveKnown();
@@ -4777,13 +4801,14 @@
         }, { onConflict: 'id' });
         if (pr.error) throw pr.error;
         await this.pushHistory(uid);
+        if (typeWait) { const te = new Error('イラスト・漫画の保存に必要な設定（supabase_types.sql）が、まだサーバーに入っていないよ'); te.typeWait = true; throw te; }
         if (!this.again) { try { localStorage.removeItem('mossDirty'); } catch (e) {} this.setStatus('保存済み（' + new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + '）'); }
         this.busy = false;
         if (this.again) this.pushSoon(300);
         return true;
       } catch (e) {
         this.busy = false;
-        this.setStatus('保存できなかった（あとで自動でやり直すよ）');
+        this.setStatus(e && e.typeWait ? 'イラスト・漫画の保存待ち（SQLの設定が必要）' : '保存できなかった（あとで自動でやり直すよ）');
         this.lastError = e;
         clearTimeout(this.timer); this.timer = setTimeout(() => this.push(), 30000);
         return false;
