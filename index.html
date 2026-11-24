@@ -3087,6 +3087,8 @@
       if (im) y += imgOp(im, P, y, CW, 760) + 40;
     }
     text(T.label, 28, '#4F7F6F', { bold: true, gap: 8 });
+    const yomi = yomiOf(it.type, d.vals);
+    if (yomi) text(yomi, 26, '#a3b3ac', { lh: 1.3, gap: 4 });   // 読み方：名前の上に、薄く小さく
     text(exportTitleOf(c), 58, '#222222', { bold: true, lh: 1.4, gap: 12 });
     const meta = [(c.tags || []).map((t) => '#' + t).join(' '), it.updatedAt ? '更新 ' + fmtDate(new Date(it.updatedAt)) : ''].filter(Boolean).join('　');
     if (meta) text(meta, 26, '#8a9a93', { gap: 20 });
