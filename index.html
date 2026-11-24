@@ -3097,7 +3097,7 @@
 
     // 基本情報
     const basic = [];
-    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push([b.label, v]); });
+    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0 || b.label === '読み方') return; const v = (d.vals[i] || '').trim(); if (v) basic.push([b.label, v]); });
     d.extras.forEach((x) => { if ((x.value || '').trim()) basic.push([x.name, x.value.trim()]); });
     if (basic.length) {
       text('基本情報', 30, '#4F7F6F', { bold: true, gap: 14 });
@@ -3257,7 +3257,7 @@
     let n = 0;
     bOrder(T).forEach((i) => {
       const b = T.basic[i];
-      if (i === 0) return;
+      if (i === 0 || b.label === '読み方') return;   // 読み方は、名前の上のふりがなで見せる
       const v = (d.vals[i] || '').trim();
       if (v) { n++; h += '<div class="dd-row"><span class="l">' + esc(b.label) + '</span><span class="v">' + esc(v) + '</span></div>'; }
     });
