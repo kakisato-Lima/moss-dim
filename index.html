@@ -941,6 +941,19 @@
     }
     .rd-yomi { font-size: 12px; margin-top: 10px; margin-bottom: -8px; }
 
+    /* ルビ（文章の一部の読み方）。保存は {漢字|かんじ} の形 */
+    ruby { ruby-position: over; }
+    ruby rt { font-size: .5em; color: var(--sub); font-weight: normal; letter-spacing: 0; }
+    .ruby-bar {
+      position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+      z-index: 60; display: none;
+    }
+    .ruby-bar.show { display: block; }
+    .ruby-bar button {
+      border: 0; border-radius: 999px; padding: 11px 20px; font-size: 14px; font-weight: 700;
+      background: var(--accent, #4F7F6F); color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.25); font-family: inherit;
+    }
+
     .item-meta {
       font-size: 11px;
       color: var(--sub);
@@ -2020,6 +2033,7 @@
 
 <div class="lightbox" id="lightbox"><span class="lb-x">×</span><img id="lbImg" alt=""></div>
 
+<div class="ruby-bar" id="rubyBar"><button type="button" id="rubyBtn">ルビを付ける</button></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2725,7 +2739,7 @@
   });
 
   /* ---------- 名前の入力ダイアログ（prompt の代わり） ---------- */
-  function askInput(title, initial, okLabel, validate, onOk) {
+  function askInput(title, initial, okLabel, validate, onOk, emptyMsg) {
     $('inputTitle').textContent = title;
     $('inputField').value = initial || '';
     $('inputErr').textContent = '';
@@ -2734,7 +2748,7 @@
     setTimeout(() => $('inputField').focus(), 50);
     const submit = () => {
       const n = $('inputField').value.trim();
-      if (!n) { $('inputErr').textContent = '名前を入力してね'; return; }
+      if (!n) { $('inputErr').textContent = emptyMsg || '名前を入力してね'; return; }
       const err = validate ? validate(n) : '';
       if (err) { $('inputErr').textContent = err; return; }
       $('inputBg').classList.remove('open');
@@ -2744,6 +2758,55 @@
     $('inputField').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
   }
   $('inputNo').addEventListener('click', () => $('inputBg').classList.remove('open'));
+
+  /* ---------- ルビを付ける（入力欄で文字を選ぶと、下にボタンが出る） ---------- */
+  const rubyOK = (el) => {
+    if (!el || !(el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text'))) return false;
+    if (!el.closest('#createForm, #docDetail')) return false;
+    if (el.hasAttribute('data-ememo') || el.hasAttribute('data-ename')) return false;
+    if (el.hasAttribute('data-basic') || el.hasAttribute('data-ev')) {
+      if (el.getAttribute('data-basic') === '0' || el.getAttribute('data-ev') === '0') return false;     // 名前（タイトル）は「読み方」欄で
+      const lab = el.closest('.frow') && el.closest('.frow').querySelector('.frow-label');
+      if (lab && lab.textContent.trim() === '読み方') return false;
+      return true;
+    }
+    if (el.hasAttribute('data-extra') || el.hasAttribute('data-ex')) return true;
+    if (el.hasAttribute('data-b')) return true;
+    return false;
+  };
+  const RB = { el: null, s: 0, e: 0 };
+  function rubyBarUpdate() {
+    const el = document.activeElement;
+    if (rubyOK(el) && el.selectionStart !== el.selectionEnd) {
+      RB.el = el; RB.s = el.selectionStart; RB.e = el.selectionEnd;
+      const sel = el.value.slice(RB.s, RB.e);
+      const m = /^\{([^{}|\n]+)\|([^{}|\n]+)\}$/.exec(sel);
+      $('rubyBtn').textContent = m ? 'ルビを外す' : 'ルビを付ける';
+      $('rubyBar').classList.add('show');
+    } else if (el && el === RB.el) {
+      $('rubyBar').classList.remove('show');
+    } else if (!rubyOK(el) && !$('inputBg').classList.contains('open')) {
+      $('rubyBar').classList.remove('show');
+    }
+  }
+  document.addEventListener('selectionchange', rubyBarUpdate);
+  $('rubyBar').addEventListener('pointerdown', (e) => e.preventDefault());
+  $('rubyBtn').addEventListener('click', () => {
+    const el = RB.el; if (!el) return;
+    const v = el.value, sel = v.slice(RB.s, RB.e), s0 = RB.s, e0 = RB.e;
+    const apply = (txt) => {
+      el.value = v.slice(0, s0) + txt + v.slice(e0);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.focus(); try { el.setSelectionRange(s0 + txt.length, s0 + txt.length); } catch (_) { /* ok */ }
+      $('rubyBar').classList.remove('show');
+    };
+    const m = /^\{([^{}|\n]+)\|([^{}|\n]+)\}$/.exec(sel);
+    if (m) { apply(m[1]); toast('ルビを外したよ'); return; }
+    if (/[{}|\n]/.test(sel)) { toast('「{ } |」や改行をまたぐ文字にはルビを付けられないよ'); return; }
+    if (sel.length > 40) { toast('ルビを付けられるのは40文字までだよ'); return; }
+    askInput('「' + sel + '」の読み方', '', 'ルビを付ける', (n) => (/[{}|\n]/.test(n) ? '「{ } |」は使えないよ' : n.length > 60 ? '読み方は60文字までだよ' : ''), (n) => { apply('{' + sel + '|' + n + '}'); }, '読み方を入力してね');
+    $('inputErr').textContent = '';
+  });
 
   $('sheetBg').addEventListener('click', (e) => {
     if (e.target.id === 'sheetBg') $('sheetBg').classList.remove('open');
@@ -2771,6 +2834,19 @@
     return i < 0 || !vals ? '' : String(vals[i] || '').trim();
   }
   const yomiHTML = (type, vals, cls) => { const y = yomiOf(type, vals); return y ? '<div class="yomi' + (cls ? ' ' + cls : '') + '">' + esc(y) + '</div>' : ''; };
+
+  /* ---------- ルビ：{漢字|かんじ} ---------- */
+  const RUBY_SRC = '\\{([^{}|\\n]{1,40})\\|([^{}|\\n]{1,60})\\}';
+  const hasRuby = (s) => new RegExp(RUBY_SRC).test(String(s || ''));
+  /* 文章を [{b:本文, r:読み方}] の並びに分ける（ルビの無い部分は b だけ） */
+  function rubyParts(s) {
+    const out = []; const re = new RegExp(RUBY_SRC, 'g'); s = String(s || ''); let last = 0, m;
+    while ((m = re.exec(s))) { if (m.index > last) out.push({ b: s.slice(last, m.index) }); out.push({ b: m[1], r: m[2] }); last = m.index + m[0].length; }
+    if (last < s.length) out.push({ b: s.slice(last) });
+    return out;
+  }
+  const rubyHTML = (s) => rubyParts(s).map((p) => (p.r ? '<ruby>' + esc(p.b) + '<rp>（</rp><rt>' + esc(p.r) + '</rt><rp>）</rp></ruby>' : esc(p.b))).join('');
+  const rubyParen = (s) => rubyParts(s).map((p) => (p.r ? p.b + '（' + p.r + '）' : p.b)).join('');
 
   function contentOf(it) {
     const d = it.data || {};
@@ -2975,11 +3051,11 @@
     const T = TYPES[it.type];
     const d = c.data;
     const L = [];
-    L.push(exportTitleOf(c));
+    { const yo = yomiOf(it.type, d.vals); L.push(exportTitleOf(c) + (yo ? '（' + yo + '）' : '')); }
     L.push('【' + T.label + '】' + ((c.tags || []).length ? ' ' + c.tags.map((t) => '#' + t).join(' ') : ''));
     L.push('');
     const basic = [];
-    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0) return; const v = (d.vals[i] || '').trim(); if (v) basic.push(b.label + '：' + v); });
+    bOrder(T).forEach((i) => { const b = T.basic[i]; if (i === 0 || b.label === '読み方') return; const v = (d.vals[i] || '').trim(); if (v) basic.push(b.label + '：' + v); });
     d.extras.forEach((x) => { if ((x.value || '').trim()) basic.push(x.name + '：' + x.value.trim()); });
     if (basic.length) { L.push('■ 基本情報'); basic.forEach((x) => L.push(x)); L.push(''); }
     const bl = [];
@@ -2998,7 +3074,7 @@
     const rel = (c.related || []).map((id) => docById(id)).filter(Boolean);
     if (rel.length) { L.push('■ 関連資料'); rel.forEach((r) => L.push('・' + TYPES[r.type].label + '：' + r.title)); L.push(''); }
     L.push('— moss dim —');
-    return L.join('\n');
+    return rubyParen(L.join('\n'));
   }
 
   function downloadBlob(blob, name) {
@@ -3054,7 +3130,29 @@
     const ops = [];
     let y = P;
 
+    /* ルビ入りの文章：本文の上に読み方を小さく描く。ルビのある行だけ、上に少し余白をとる */
+    const measRuby = (s, size, w, bold, lh) => {
+      const font = (bold ? 'bold ' : '') + size + 'px ' + EXP_FONT;
+      const rs = Math.max(12, Math.round(size * 0.5)), rfont = (bold ? 'bold ' : '') + rs + 'px ' + EXP_FONT;
+      const h = Math.round(size * (lh || 1.6)), pad = rs + 2;
+      const rows = []; let total = 0;
+      String(s).split('\n').forEach((par) => {
+        const units = [];
+        rubyParts(par).forEach((p) => { if (p.r) units.push({ b: p.b, r: p.r }); else Array.from(p.b).forEach((ch) => units.push({ b: ch })); });
+        units.forEach((u) => {
+          mc.font = font; u.bw = mc.measureText(u.b).width; u.rw = 0;
+          if (u.r) { mc.font = rfont; u.rw = mc.measureText(u.r).width; }
+          u.w = Math.max(u.bw, u.rw);
+        });
+        let line = [], x = 0;
+        const flush = () => { const hasR = line.some((u) => u.r); const rh = h + (hasR ? pad : 0); rows.push({ items: line, y: total, hasR: hasR, h: rh }); total += rh; line = []; x = 0; };
+        units.forEach((u) => { if (x + u.w > w && line.length) flush(); u.x = x; line.push(u); x += u.w; });
+        flush();
+      });
+      return { ru: rows, total: total, h: h, font: font, rfont: rfont, rs: rs, pad: pad, size: size };
+    };
     const meas = (s, size, w, bold, lh) => {
+      if (hasRuby(s)) return measRuby(s, size, w, bold, lh);
       mc.font = (bold ? 'bold ' : '') + size + 'px ' + EXP_FONT;
       const lines = wrapLines(mc, s, w);
       const h = Math.round(size * (lh || 1.6));
@@ -3062,7 +3160,8 @@
     };
     const textAt = (s, size, color, x, yy, w, bold, lh) => {
       const m = meas(s, size, w, bold, lh);
-      ops.push({ k: 't', lines: m.lines, font: m.font, color: color, x: x, y: yy, h: m.h, size: size });
+      if (m.ru) ops.push({ k: 'ru', m: m, color: color, x: x, y: yy });
+      else ops.push({ k: 't', lines: m.lines, font: m.font, color: color, x: x, y: yy, h: m.h, size: size });
       return m.total;
     };
     const text = (s, size, color, o) => {
@@ -3162,7 +3261,16 @@
       if (o.y > H) return;
       if (o.k === 'r') { ctx.fillStyle = o.color; ctx.fillRect(o.x, o.y, o.w, o.h); }
       else if (o.k === 'i') ctx.drawImage(o.im, o.x, o.y, o.w, o.h);
-      else {
+      else if (o.k === 'ru') {
+        const m = o.m;
+        m.ru.forEach((row) => {
+          const by = o.y + row.y + (row.hasR ? m.pad : 0) + (m.h - m.size) / 2;
+          row.items.forEach((u) => {
+            ctx.font = m.font; ctx.fillStyle = o.color; ctx.fillText(u.b, o.x + u.x + (u.w - u.bw) / 2, by);
+            if (u.r) { ctx.font = m.rfont; ctx.fillStyle = '#8a9a93'; ctx.fillText(u.r, o.x + u.x + (u.w - u.rw) / 2, o.y + row.y + 2); }
+          });
+        });
+      } else {
         ctx.font = o.font; ctx.fillStyle = o.color;
         o.lines.forEach((ln, i) => ctx.fillText(ln, o.x, o.y + i * o.h + (o.h - o.size) / 2));
       }
@@ -3214,8 +3322,8 @@
   }
 
   function blockViewHTML(b) {
-    if (b.t === 'heading') return b.text ? '<h3 class="b-h">' + esc(b.text) + '</h3>' : '';
-    if (b.t === 'text') return b.text ? '<p class="b-p">' + esc(b.text) + '</p>' : '';
+    if (b.t === 'heading') return b.text ? '<h3 class="b-h">' + rubyHTML(b.text) + '</h3>' : '';
+    if (b.t === 'text') return b.text ? '<p class="b-p">' + rubyHTML(b.text) + '</p>' : '';
     if (b.t === 'image') {
       const ims = b.images.filter((i) => i.src);
       return ims.length ? '<div class="b-imgs' + (ims.length > 1 ? ' multi' : '') + '">' + ims.map(figHTML).join('') + '</div>' : '';
@@ -3225,10 +3333,10 @@
       const has = im && im.src;
       if (!has && !b.text) return '';
       return '<div class="b-imgtext' + (b.side === 'right' ? ' right' : '') + (has ? '' : ' noimg') + '">' +
-        (has ? '<div class="bi">' + figHTML(im) + '</div>' : '') + '<p class="b-p" style="margin-top:0">' + esc(b.text) + '</p></div>';
+        (has ? '<div class="bi">' + figHTML(im) + '</div>' : '') + '<p class="b-p" style="margin-top:0">' + rubyHTML(b.text) + '</p></div>';
     }
     if (b.t === 'quote') {
-      return (b.text || b.note) ? '<div class="b-quote"><div class="q">' + esc(b.text) + '</div>' + (b.note ? '<div class="n">' + esc(b.note) + '</div>' : '') + '</div>' : '';
+      return (b.text || b.note) ? '<div class="b-quote"><div class="q">' + rubyHTML(b.text) + '</div>' + (b.note ? '<div class="n">' + rubyHTML(b.note) + '</div>' : '') + '</div>' : '';
     }
     return '<hr class="b-hr">';
   }
@@ -3259,10 +3367,10 @@
       const b = T.basic[i];
       if (i === 0 || b.label === '読み方') return;   // 読み方は、名前の上のふりがなで見せる
       const v = (d.vals[i] || '').trim();
-      if (v) { n++; h += '<div class="dd-row"><span class="l">' + esc(b.label) + '</span><span class="v">' + esc(v) + '</span></div>'; }
+      if (v) { n++; h += '<div class="dd-row"><span class="l">' + esc(b.label) + '</span><span class="v">' + rubyHTML(v) + '</span></div>'; }
     });
     d.extras.forEach((x) => {
-      if ((x.value || '').trim()) { n++; h += '<div class="dd-row"><span class="l">' + esc(x.name) + '</span><span class="v">' + esc(x.value) + '</span></div>'; }
+      if ((x.value || '').trim()) { n++; h += '<div class="dd-row"><span class="l">' + esc(x.name) + '</span><span class="v">' + rubyHTML(x.value) + '</span></div>'; }
     });
     if (!n) h += '<div class="nnote" style="margin:0">基本情報はまだ入力されていないよ。</div>';
     h += '</div>';
